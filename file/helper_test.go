@@ -27,6 +27,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestSafeFileRotateExistingFile(t *testing.T) {
@@ -82,4 +83,49 @@ func TestSafeFileRotateExistingFile(t *testing.T) {
 	contents, err = ioutil.ReadFile(filepath.Join(tempdir, "registry"))
 	assert.NoError(t, err)
 	assert.Equal(t, []byte("new filebeat 2"), contents)
+}
+
+func TestSafeFileRotateSymLinks(t *testing.T) {
+	tempdir := t.TempDir()
+
+	// create existing target and link
+	exTarget := "existing_target"
+	exTargetAbsPath := filepath.Join(tempdir, exTarget)
+	f, err := os.Create(exTargetAbsPath)
+	require.NoError(t, err)
+
+	err = f.Close()
+	require.NoError(t, err)
+
+	exLink := "existing_link"
+	linkAbsPath := filepath.Join(tempdir, exLink)
+	err = os.Symlink(exTargetAbsPath, linkAbsPath)
+	require.NoError(t, err)
+
+	//create new target and temp link
+	newTarget := "new_target"
+	newTargetAbsPath := filepath.Join(tempdir, newTarget)
+
+	f, err = os.Create(newTargetAbsPath)
+	require.NoError(t, err)
+
+	err = f.Close()
+	require.NoError(t, err)
+
+	tmpLink := "new_link"
+	tmpLinkAbsPath := filepath.Join(tempdir, tmpLink)
+	err = os.Symlink(newTargetAbsPath, tmpLinkAbsPath)
+	require.NoError(t, err)
+
+	// rotate symlinks
+	err = SafeFileRotate(linkAbsPath, tmpLinkAbsPath)
+	assert.NoError(t, err)
+
+	require.FileExistsf(t, linkAbsPath, "existing link %q does not exist", linkAbsPath)
+	assert.NoFileExistsf(t, tmpLinkAbsPath, "the tmp link with new target %q was not deleted", tmpLinkAbsPath)
+
+	actualLinkTarget, err := os.Readlink(linkAbsPath)
+	assert.NoError(t, err)
+
+	assert.Equal(t, newTargetAbsPath, actualLinkTarget)
 }
